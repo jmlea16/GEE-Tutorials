@@ -1,0 +1,269 @@
+//////////////////////////////////////////////////////////////////////
+///////////////Getting Started with Google Earth Engine///////////////
+///////Tutorial 2 - Filtering - getting the data that you want////////
+////////////(C) James M. Lea, University of Liverpool, 2025///////////
+////////////////////Email: j.lea@liverpool.ac.uk//////////////////////
+//////////////////////////////////////////////////////////////////////
+
+
+/*
+This tutorial covers how to filter datasets so you can get access to the data that you want.
+This includes filtering in terms of space (i.e. getting data from a specific location) and
+filtering using metadata (i.e. data about an image or feature), such as date of acquisition,
+cloud cover etc. It also covers how to export an image to your Google Drive.
+NOTE: When you first run the code, ERRORS WILL APPEAR IN THE CONSOLE, but these should 
+disappear as you work through the tutorial!
+
+The worked example given here is for filtering image collections, though exactly the same
+principles apply to filtering feature collections (i.e. collections of vector data).
+
+From Tutorial 1 you should already know how to find and access data collections from the GEE
+data catalogue, and how to visualise an image.
+
+**USEFUL TIPS FOR WORKING WITH THIS SCRIPT**
+So you can work this tutorial step by step, at the start of the tutorial, all code is commented
+out (green text) by starting each line with "//", while instruction text is bracketed by "/*" 
+or "//////".
+It is possible to toggle commented/uncommented code by using a keyboard shortcut
+Ctrl + /
+
+Try to avoid deleting or uncommenting the instruction text as it will mess up
+the script!
+*/
+
+
+//////////////////////////////////
+///////TUTORIAL BEGINS HERE///////
+//////////////////////////////////
+
+/*
+TUTORIAL 2 - FILTERING - GETTING THE DATA THAT YOU WANT
+The GEE data catalogue holds huge amounts of data, and some individual image or feature 
+collections can hold tens to hundreds of thousands of images/features. Being able to filter
+these so that you can get at data that you need in an efficient way is fundamental to
+being able to work with GEE. Working with only the data that you need also can improve the
+efficiency of your scripts and help to avoid maxxing out available memory
+*/
+
+////(2a) Filtering by location using the map
+//////// If you have a particular study location then filtering data by location can be key
+//////// Luckily, GEE has in-built functionality to achieve this, and there are a couple of
+//////// ways of going about this. Filtering by location using the map is arguably the quickest
+//////// and easiest way of doing this.
+////////
+//////// Using the drawing tools in the top left of the map, select the pin option and click
+//////// on the map where you want data for. Once you have done this press the Esc key once
+//////// so you don't accidentally add any other points to the map. A small panel will appear
+//////// in the top left of the map called "Geometry Imports", and if you hover your cursor
+//////// over it you will see the point you have added has the name "geometry". In GEE this
+//////// can be accessed in the code editor as a variable [syntax: ee.Geometry(geometry)]
+//////// Note: you can also use the other drawing tools to define an area of interest, though
+//////// filtering using areas will mean that data that overlaps with *any* part of the area
+//////// defined will be kept.
+
+//////// Define image collection that you will be working with
+var imColl=ee.ImageCollection("LANDSAT/LC08/C02/T1_L2")
+
+//////// Filter imColl by the geometry that you have defined using the .filterBounds() function.
+//////// The input for this should be a geometry object  [syntax: ee.Geometry(geometry)] similar
+//////// to the one you have just defined in the map. This will return all imagery from the 
+//////// image collection that overlaps with it.
+var filtByLoc=ee.ImageCollection(imColl)
+                .filterBounds(geometry)
+print('(2a) Image Collection filtered by location',ee.ImageCollection(filtByLoc))
+
+////(2b) There is another way of filtering by location if you know the latitude/longitude of where
+//////// you want data for. This is achieved by generating your own geometry object in the code
+//////// editor directly using the one of the "geometry constructor" functions. For generating
+//////// a single point, the syntax for this is ee.Geometry.Point([lon,lat],projection). This can
+//////// also be added to the map. GEE can also handle point inputs in different projections
+//////// (e.g. coordinates in UTM projections). If you have data like this that you want to 
+//////// incorporate into your code, make sure to define the correct map projection (i.e. EPSG 
+//////// code) when defining the geometry. We have included the EPSG code in the example below
+//////// for completeness, though GEE defaults to EPSG:4326 (WGS1984) so in this example it
+//////// isn't strictly necessary.
+///NOTE: take a look at the different types of Geometry that can be created in GEE using
+//////// the Docs tab. These will become useful as you work more with GEE!
+
+//////// Define point in SW Greenland
+var lon=-50.38
+var lat=64.41
+var point=ee.Geometry.Point([lon,lat],'EPSG:4326')  //define geometry
+print('(2bi)SW Greenland point defined in code editor',point)
+Map.addLayer(point) //add point to map
+
+//////// Filter image collection by point
+var filtByPoint=ee.ImageCollection(imColl)
+                 .filterBounds(ee.Geometry(point))  //filter imColl by point you have defined
+print('(2bii) Im Collection filtered by SW Greenland point',ee.ImageCollection(filtByPoint))
+
+////(2c) Filtering by date.
+//////// You will see in the console, the result above still returns several hundred images.
+//////// There are another set of handy functions that allow you to filter the data by the
+//////// time they were collected. The first of these is .filterDate(startDate,endDate) if you
+//////// want data that were collected within a particular date range. When defining the
+//////// start and end dates, the function will accept a few different formats:
+//////// - 'YYYY-MM-dd' - a string in year-month-day format (must be 10 characters long)
+//////// - ee.Date(date) - a GEE date object (look up in Docs tab for more info)
+//////// - UNIX date - a number indicating the number of milliseconds since 1970-01-01.
+////////
+///NOTE: Though the UNIX date may seem quite a strange one to include, and you probably won't
+//////// ever have to type any UNIX dates out in the code editor, this is actually the variable
+//////// which GEE uses for temporal filters. If you look at the properties of an example image
+//////// and scroll to the bottom, you will see a metadata variable called 'system:time_start'.
+//////// If the images or features in the collection you are working with do not have this
+//////// bit of metadata then GEE will not be able to filter it by time.
+
+//////// filter imColl by location and for all imagery collected between 2022-2024.
+///NOTE: The end date is not inclusive, so if we used '2024-12-31' then data collected on the
+//////// 31st December 2024 would not be included.
+var filtByPointAndDate=ee.ImageCollection(imColl)
+                        .filterBounds(point)
+                        .filterDate('2022-01-01','2025-01-01')
+print('(2c) Im Collection filtered by SW Greenland point and date range',ee.ImageCollection(filtByPointAndDate))
+
+////(2d) Filtering by calendar ranges
+//////// Sometimes if you're only interested in data from a particular time of year then it can
+//////// be useful to filter by calendar ranges (e.g. imagery only collected during certain months).
+//////// GEE has an in built function that allows you to do this - search in the Docs tab for
+//////// "calendarRange" which should show up the ee.Filter.calendarRange() function. Take a
+//////// look at the documentation for this function to see how it works.
+//////// In the example below we will filter the imColl by location, date range, and for data
+//////// collected during the period June-August
+///NOTE: You will see below that the format of the filter for calendar range is slightly different
+//////// from the previous filters used, where the calendarRange filter is enclosed within
+//////// the function .filter(). GEE has lots of different filters that can be applied (look
+//////// at Docs tab for more info) meaning that there are lots of ways in which you can 
+//////// potentially filter your data!
+var filtByPointDateAndCalRange=ee.ImageCollection(imColl)
+                        .filterBounds(point)
+                        .filterDate('2022-01-01','2025-01-01')
+                        .filter(ee.Filter.calendarRange(6,8,'month'))
+print('(2d) Im Coll filtered by SW Greenland point, date range, and calendar range',
+        ee.ImageCollection(filtByPointDateAndCalRange))
+        
+////(2d) Filtering by metadata
+//////// From (2d) we have now reduced the image collection from several hundred images to
+//////// a few tens of images. However, if we are looking for cloud free imagery then not
+//////// all of these data are usable. Luckily, each Landsat image has a metadata field which
+//////// indicates the percentage cloud cover, and we can get GEE to filter out data where
+//////// there may be too much cloud. This uses one of the 'logical filters' where we want
+//////// to retain images where the metadata value is *less than* a given value. You can see
+//////// the other logical filters in the Docs tab (e.g. >, =, <=, >=), though for the example
+//////// below the syntax is .filter(ee.Filter.lt(metadataName,thresholdValue)) where the 
+//////// metadataName is a string. Putting all this together to only retain images with <10%
+//////// cloud cover looks like:
+
+var filtByCloudCover=ee.ImageCollection(imColl)
+                        .filterBounds(point)
+                        .filterDate('2022-01-01','2025-01-01')
+                        .filter(ee.Filter.calendarRange(6,8,'month'))
+                        .filter(ee.Filter.lt('CLOUD_COVER',10))
+print('(2e) filtering by cloud cover',ee.ImageCollection(filtByCloudCover))
+///NOTE: Different datasets will have their own naming conventions for metadata fields, so
+//////// make sure to check when filtering by metadata that you have the correct metadata
+//////// field name! Remember too that everything is case sensitive, so if there are capital
+//////// letters you need to make sure that these exactly match (otherwise you will end up)
+//////// with an empty image collection)
+
+////(2f) Selecting only the image bands that you need within a collection.
+//////// GEE works best if you only carry forward the minimum amount of data that you 
+//////// need, and often satellite imagery will include bands that you don't actually need
+//////// for the analysis that you want to do. You can get rid of the bands that you don't
+//////// need in a similar way to an individual image (see Tutorial 1) by using the 
+//////// .select([bandNames]) function.
+var filtUsefulBandsOnly=ee.ImageCollection(imColl)
+                        .filterBounds(point)
+                        .filterDate('2022-01-01','2025-01-01')
+                        .filter(ee.Filter.calendarRange(6,8,'month'))
+                        .filter(ee.Filter.lt('CLOUD_COVER',10))
+                        .select(['SR_B4','SR_B3','SR_B2'])
+print('(2f) Filtered collection, useful bands only',ee.ImageCollection(filtUsefulBandsOnly))
+
+////(2g) Seeing the imagery that you want on the map
+//////// The method shown here is not *strictly* best practice, but can be a useful
+//////// hack to quickly see what different images in your filtered collection look like.
+//////// GEE has no way to quickly pull (for example) the 5th image out of a collection to
+//////// show it on the map. However, there is a workaround by converting the image collection
+//////// to a ee.List() object (see Docs tab for more information about this object type).
+//////// Once converted to a list object you can then pull whichever image you want by using
+//////// the .get(index) function. Note that index values start at 0, so for a collection with
+//////// 9 images, the possible values for index are 0-8.
+
+//////// Convert image collection from (2f) to a list (9999 indicates the maximum number of
+//////// elements that you want to allow in the list). If you already know how many images
+//////// to expect in the collection, GEE will run faster if you use this number.
+var imCollList=ee.ImageCollection(filtUsefulBandsOnly).toList(9999)
+print('(2gi) List of images',ee.List(imCollList))
+
+//////// We can then directly pull whichever number image we want and add it to the map using
+//////// what we learnt in Tutorial 1. Uncomment the Map.addLayer line below and try changing 
+//////// the imageIndex number and pressing running the code again to view the different
+//////// imagery.
+var imageIndex=8  //index of image in list
+var image=ee.Image(ee.List(imCollList).get(imageIndex)) //pulls image from list
+print('(2gii) image pulled from list',ee.Image(image))
+
+// Map.addLayer(ee.Image(image),{min:0,max:20000}) //adds image to map
+
+///NOTE: The reason this is not best practice is because converting image collections to list
+//////// objects is quite memory intensive (and therefore slow!). If you're writing quite a 
+//////// long or memory intensive code and want to visualise results this method *may* throw
+//////// a "allowable memory exceeded" error. Unfortunately the only way to know whether it 
+//////// will or not is through trial and error!
+
+////(2g) Exporting an image
+//////// Sometimes you may want to export a satellite image, or an image that represents the
+//////// results of your analysis out of GEE so you can work on it offline. GEE exports data
+//////// to your Google Drive that is associated with the Gmail address that you signed up 
+//////// with. However, those new to GEE often get caught out with what appear like strange
+//////// behaviours of the export function. Below provides an example of how to avoid those
+//////// problems!
+////////
+//////// In the Docs tab, if you search for "export" you will see a lot of different functions
+//////// that allow you to get data out of GEE. In this instance, we will be using the 
+//////// Export.image.toDrive() function to export image data to your Google Drive. We will
+//////// define the options to pass to the function in the form of a Javascript object (i.e.
+//////// information contained within curly brackets - {infoGoesHere}). Uncomment the text
+//////// below, add in your geometry export area (see below) and run the code - this will 
+//////// create an export task for the image that you have defined on L204.
+
+// Export.image.toDrive({
+//   image:ee.Image(image),  //image to export
+//   description:'exampleImage', //name of task
+//   fileName:'exampleImage',  //name of file as it will appear in your Google Drive
+//   scale:10, //the pixel size (m) to export the image at. Without this GEE will revert to the pixel
+//             //image size at the current zoom level of the map (go to the inspector tab and
+//             //click on the map to see what this is)
+//   region:   ,//Draw a box or polygon using the map drawing tools in the top right of the map
+//             //representing the area you want to export (for this quick example, I suggest only
+//             //defining a small area as it will export more quickly). Type the name of the
+//             //geometry next to region (should be something like geometry2), and make sure
+//             //there is a comma after it. If you don't define this, the area currently observed
+//             //in the map will be exported.
+//   crs:'EPSG:4326', //the projection to export the image in. If you don't define this then the
+//                   //image will export in the projection as defined. In this example we force
+//                   //the projection from UTM into WGS84 (EPSG:4326)
+//   maxPixels:1e13, //for large images you might exceed the soft size limit GEE imposes for image
+//                   //exports (10^8 pixels = 1e8 pixels). To override this you can manually define
+//                   //the maximum export size up to an image size of 1e13 pixels.
+//   fileFormat:'GeoTIFF'  //the file format to export in. See Docs for other options.
+// })  //See Docs tab for full range of options, though the above are likely the ones that will need
+//     //in the majority of cases.
+
+////////////////////
+///////TASK/////////
+////////////////////
+
+/*
+Using what you have learnt above (and copy/pasting/modifying code if needed) filter the Sentinel-2
+image collection by area, date, calendar range and cloud cover.
+Tips:
+- Open a new code editor window to avoid anything in this script interfering with the
+  code that you are writing.
+- use the search bar at the top of the page to find the Sentinel-2 image collection
+- check what the metadata field name for cloud cover is in Sentinel-2 imagery - it's different
+  from Landsat!
+*/
+
+                
