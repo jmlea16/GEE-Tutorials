@@ -3,4 +3,4 @@ etting started with coding in Google Earth Engine can be a daunting task. While 
 
 These tutorials currently cover the basics of GEE to get people started with the Javascript API, though as time goes by I will try to add to these to cover more topics and concepts.
 
-Those delivering courses introducing students to GEE are very welcome to use and adapt these tutorials, though if you do I would really appreciate a quick email[mailto:j.lea@liverpool.ac.uk] to let me know!
+Those delivering courses introducing students to GEE are very welcome to use and adapt these tutorials, though if you do I would really appreciate a quick [email](mailto:j.lea@liverpool.ac.uk) to let me know!
