@@ -1,0 +1,134 @@
+//////////////////////////////////////////////////////////////////////
+///////////////Getting Started with Google Earth Engine///////////////
+///////////////Tutorial 3 - Intro to raster mathematics///////////////
+////////////(C) James M. Lea, University of Liverpool, 2025///////////
+////////////////////Email: j.lea@liverpool.ac.uk//////////////////////
+//////////////////////////////////////////////////////////////////////
+
+/*
+This tutorial covers an introduction to performing mathematical operations and
+other types of commonly used image analysis. To demonstrate the range of functionality
+it will show three different ways of calculating the Normalised Difference Vegetation
+Index (NDVI) for a single satellite image that is obtained from a filtered image
+collection (see Tutorial 2 for info on how to do this).
+
+By the end of this tutorial you should know the different ways that mathematical 
+operations can be performed on imagery.
+
+**USEFUL TIPS FOR WORKING WITH THIS SCRIPT**
+So you can work this tutorial step by step some code is commented
+out (green text) by starting each line with "//", while some instruction text is bracketed by "/*" 
+or "//////".
+It is possible to toggle commented/uncommented code by using a keyboard shortcut
+Ctrl + /
+
+Try to avoid deleting or uncommenting the instruction text as it will mess up
+the script!
+*/
+
+//////////////////////////////////
+///////TUTORIAL BEGINS HERE///////
+//////////////////////////////////
+
+////(3a) Get an image to work with by filtering an image collection.
+//////// From Tutorial 2 you will have learnt how to filter an image collection and pull an
+//////// individual image from it for analysis. Here we pull a Landsat 8 image from SW Greenland to
+//////// analyse, and select the bands needed for visualising a true colour image on the map
+//////// and performing the NDVI calculation (i.e. bands 2-5, which for convenience for visualisation
+//////// have been forced into the order: [4,3,2,5]).
+var imColl=ee.ImageCollection("LANDSAT/LC08/C02/T1_L2")
+                        .filterBounds(geometry)
+                        .filterDate('2022-01-01','2025-01-01')
+                        .filter(ee.Filter.calendarRange(6,8,'month'))
+                        .filter(ee.Filter.lt('CLOUD_COVER',10))
+                        .select(['SR_B4','SR_B3','SR_B2','SR_B5'])
+print('(3a) Image Collection of available images',ee.ImageCollection(imColl))
+                        
+var imCollList=ee.ImageCollection(imColl).toList(99)
+var imageNumber=5
+var image=ee.Image(ee.List(imCollList).get(imageNumber))
+Map.addLayer(ee.Image(image),{min:0,max:20000},'(3a) image analysed - RGB')
+
+////(3b) Calculating NDVI the simple, but not necessarily most computationally efficient way.
+//////// As normalised difference calculations are very common in remote sensing, GEE has an
+//////// in built function for performing this analysis. 99% of the time this is fine, but
+//////// if you're looking for marginal gains in computational performance (e.g. if you're
+//////// doing global analysis where this could actually make a difference) you might want
+//////// to use one of the other approaches covered.
+//////// The function is very simple [syntax: .normalizedDifference([band1Name,band2Name])
+//////// applied to the image defined above, and produces an image with the band name 'nd'
+///NOTE: Mainly for folk who default to British English, note GEE functions are spelled in
+//////// American English (i.e. normalized, rather than normalised), so watch out for typos!
+
+var ndvi1=ee.Image(image).normalizedDifference(['SR_B5','SR_B4'])
+print('(3b) NDVI - method 1',ee.Image(ndvi1))
+
+////(3c) Adding image to map with custom colour palette
+//////// If we add the NDVI map using the same approach as before it will appear with a 
+//////// grayscale colour palette, which for an image of a range of -1 to 1 is not terribly
+//////// useful. However, in the visualisation options we can define our own custom colour
+//////// palette using either HEX colour codes or their associated names. Uncomment the 
+//////// Map.addLayer function below and run the code to visualise the result. Try out
+//////// different max/min values to highlight areas that you want, but note that to keep
+//////// white = 0 then the minimum value must equal the max*(-1). Also try hovering over
+//////// the Layers box (top right of map) and using the opacity slider to compare results with 
+//////// the original RGB image.
+
+// Map.addLayer(ee.Image(ndvi1),{min:-1,max:1,palette:['blue','white','green']},'(3c) NDVI - method1')
+
+////(3d) Calculating NDVI using mathematical operators.
+//////// While you would probably use the normalisedDifference() function to calculate NDVI in
+//////// most cases, you can also calculate it using in-built mathematical operators. This is
+//////// marginally more efficient, but also is illustrative of how you can do other calculations
+//////// in GEE.
+//////// The NDVI calculation the formula is (NIR-RED)/(NIR+RED), which below is I have separated
+//////// out into term1/term2 (where term1=NIR-RED, and term2=NIR+RED). The reason for this (as you
+//////// will see) is that if you try to do everything in a single line of code it can get a bit 
+//////// difficult to follow, and increases the likelihood of making mistakes
+var red=ee.Image(image).select('SR_B4') //get red band from image
+var NIR=ee.Image(image).select('SR_B5') //get NIR band from image
+var term1=ee.Image(red).subtract(ee.Image(NIR)) //calc term1
+var term2=ee.Image(red).add(ee.Image(NIR))      //calc term2
+var ndvi2=ee.Image(term1).divide(term2)         //combine to calc NDVI
+            .rename('ndvi') //renames band as 'ndvi'
+print('(3d) NDVI - method 2',ee.Image(ndvi2))
+//////// To illustrate the benefits of breaking up mathematical operations as above, see below
+//////// for what the code would look like all done in one line!
+//var ndviFull=ee.Image(ee.Image(image).select('SR_B5').subtract(ee.Image(image).select('SR_B4'))
+//              .divide(ee.Image(ee.Image(image).select('SR_B5').add(ee.Image(image).select('SR_B4'))))
+//              .rename('ndvi')
+
+////(3e) Writing mathematical expressions in GEE
+//////// The final approach of performing mathematical expressions in GEE is to assign each variable
+//////// a name and then write out the equation as if it is a client-side operation. More information 
+//////// on this can be found here: https://developers.google.com/earth-engine/guides/image_math
+var ndvi3=ee.Image(image).select(['SR_B4','SR_B5'])
+              .expression(
+                '(NIR - RED) / (NIR + RED)',  //write out expression
+                {NIR:ee.Image(image).select('SR_B5'), //define which band = NIR
+                 RED:ee.Image(image).select('SR_B4')  //define which band = RED
+                }
+              ).rename('ndvi')  //rename band to 'ndvi
+print('(3e) NDVI - method 3')
+
+//////// All 3 methods return an identical result, but using what you have learnt in this practical
+//////// should provide you with the knowledge to apply pretty much any mathematical operation to
+//////// imagery in GEE!
+
+////////////////////
+///////TASK/////////
+////////////////////
+
+/*
+Using what you have learnt above (and copy/pasting/modifying code if needed) calculate the Enhanced
+Vegetation Index (EVI) for the image in this script using method 2 and method 3 and visualise the 
+result on the map.
+Tips:
+- You don't need to create a new image collection and filter it. You can just use ee.Image(image)
+  which has already been defined above
+- Look up the EVI calculation and check whether you have all the bands you need. You may need to
+  check the Landsat image collection information by searching for it in the search bar at the top
+  of the screen.
+- When you have a result for method 2 and method 3, subtract one from the other to see if you get
+  the same result (i.e. resulting image on the map should show up uniform blank colour)
+*/
