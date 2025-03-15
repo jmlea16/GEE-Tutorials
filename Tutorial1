@@ -1,0 +1,154 @@
+//////////////////////////////////////////////////////////////////////
+///////////////Getting Started with Google Earth Engine///////////////
+//////Tutorial 1 - Understanding the API and visualising an image/////
+////////////(C) James M. Lea, University of Liverpool, 2025///////////
+////////////////////Email: j.lea@liverpool.ac.uk//////////////////////
+//////////////////////////////////////////////////////////////////////
+
+/*
+This tutorial covers the basics of getting started in Google Earth Engine (GEE)
+working in GEE's Javascript Application Programming Interface (API) (i.e. this 
+page!).
+
+**WORKING WITH GEE IN PYTHON OR R ENVIRONMENTS**
+It is also possible to work in GEE in Python and R environments, though for
+getting started, the Javascript API provides greater functionality for:
+1. Gaining understanding of how GEE works
+2. How data in GEE are stored and organised, and
+3. How to identify errors and debug code
+
+**USEFUL TIPS FOR WORKING WITH THIS SCRIPT**
+So you can work this tutorial step by step, at the start of the tutorial, all code is commented
+out (green text) by starting each line with "//", while instruction text is bracketed by "/*" 
+or "//////".
+It is possible to toggle commented/uncommented code by using a keyboard shortcut
+Ctrl + /
+
+Try to avoid deleting or uncommenting the instruction text as it will mess up
+the script!
+
+**EXTRA GENERAL TIPS, AND NOTES ON LAYOUT OF THE API**
+- Map (below) - where you can visualise imagery and vector data
+- TOP LEFT PANEL
+  - Scripts - where all your saved scripts are stored
+  - Docs - where all the documentation relating to the in-built GEE functions are
+           located. These are searchable and is very handy to work out what can be
+           done in GEE!
+  - Assets - sometimes it is useful/necessary to upload your own data to GEE and
+             this is where they are stored. Each GEE Project has a quota limit
+             of 250Gb of storage and up to 50,000 individual assets. Google have
+             just introduced new quotas on the number of projects individuals can
+             have, though it is quite easy and quick to request a quota uplift of
+             up to an extra 50 projects if you run out! Note that if you want to 
+             access assets from different projects you will have to modify the 
+             sharing options by clicking on the relevant asset and making a note
+             of the asset path.
+- CODE EDITOR PANEL (top middle) - this is the panel you are reading right now and
+  is where you type your code
+  - 'Get Link' button - if you want to share your code, this button will generate
+    a unique weblink that allows someone else to see what you have written.
+  - 'Save' button - saves your code, which can then be found in your scripts tab
+  - 'Run' button - executes the code that is currently in the code editor
+  - 'Reset' button - clears the code editor of all text (be careful not to click
+                     it accidentally!)
+  - 'Apps' button - allows you to create a web app from the current contents of the
+                    code editor that can be accessed by anyone including those without
+                    a GEE account
+  - 'Cog' button - GEE settings
+- TOP RIGHT PANEL:
+  - Inspector tab - shows values of data visualised on the map for any location that
+                    you click
+  - Console tab - displays results that you choose to "print" from the code editor.
+                  Very useful for working out what is going on and debugging!
+  - Tasks tab - if you choose to export data to your Google Drive or as a GEE asset
+                you will need to go to this tab and click the blue "run" button in
+                order for the export to start.
+- Search bar (very top of the page) - allows you to search datasets that are currently
+  available on the GEE servers.
+*/
+
+//////////////////////////////////
+///////TUTORIAL BEGINS HERE///////
+//////////////////////////////////
+
+/*
+TUTORIAL 1 - ACCESSING DATA FROM GOOGLE SERVERS AND VISUALISING AN IMAGE
+The GEE servers hold a truly massive amount of data in their Data Catalog. This section
+will explain how to find the data that you are after and interrogate that information
+using Landsat 8 data as an example.
+
+(1a) Type "Landsat 8" into the search bar at the top of the screen. You will see that 
+     there are multiple different datasets - click on one of them and a pop up window
+     will appear containing information about that dataset. Take notice of the text in
+     the grey box called "collection snippet". This can be thought of as the folder path
+     where all the data for this collection is stored.
+     
+(1b) For this practical we will work with the example of Landsat 8 Collection 2 Tier 1
+     data. This is the best quality surface reflectance data (i.e. data that has passed
+     NASA quality checks and has been processed to remove atmospheric interference)
+*/
+
+///(1C) Load in the data (an "ImageCollection" object), calling the variable imColl.
+var imColl=ee.ImageCollection("LANDSAT/LC08/C02/T1_L2")
+
+///(1D) If we try and see what data are contained in this by printing the variable to the 
+/////console, you will see it throws an error. This is because you're asking to see 
+/////information about every Landsat 8 image ever collected!
+print('(1D) Attempt to print too much data!',imColl)
+
+///(1E) Sometimes you might just want to see an example of the data that are stored in a
+/////collection. In this instance you can use the .first() function to return the first
+/////image or feature in a collection. You can see in the console that this has returned
+/////an image object [syntax: ee.Image(image)] and you can explore what data are held in it.
+var firstImage=ee.ImageCollection(imColl).first()
+print('(1E) First image in the Landsat 8 collection:', firstImage)
+
+///(1F) If you want to look at what an image looks like in the map, you can add it using the
+/////code below, and automatically zoom to where the image is using the Map.centerObject(object,zoomLevel)
+/////function. This visualises the image, but GEE automatically takes the first 3 bands in
+/////the image as the RGB channels, and automatically chooses what the range of values visualised
+/////are. For Landsat 8, that means what is shown on the map is:
+/////red channel - ultra blue L8 band; green channel - blue L8 band; blue channel - green L8 band
+/////and the range of values shown is 0 to 65535
+Map.addLayer(ee.Image(firstImage),{},'(1F) L8, wrong image band order')
+Map.centerObject(ee.Image(firstImage),6)
+
+////(1G) There are two options to rearrange the band order to get a true colour image on the map.
+//////Option 1: tell GEE which bands to visualise when adding the image to the map and define
+//////the minimum/maximum values [syntax: Map.addLayer(image,visualisationOptions,layerName)].
+//////To find out about other visualisation options that can be set, type in Map.addLayer into 
+//////the Docs tab search bar (top left) and click on the function.
+Map.addLayer(ee.Image(firstImage),{min:0,max:50000,bands:['SR_B4','SR_B3','SR_B2']},'(1G)L8 correct band order 1')
+
+////(1H) Option 2: select only the bands you are interested in and then visualise them on the map.
+//////This gets rid of superfluous data, and can actually help speed up performance of GEE as it
+//////reduces the amount of memory required for code to successfully execute. You will be able
+//////to see in the console that imageRGBonly has only the bands of interest, and have been 
+//////put into the correct order, so we don't need to define the bands option when using Map.addLayer()
+var imageRGBonly=ee.Image(firstImage).select(['SR_B4','SR_B3','SR_B2'])
+print('(1H) L8, correct band order and only bands that are needed',ee.Image(imageRGBonly))
+Map.addLayer(ee.Image(imageRGBonly),{min:0,max:50000},'(1H) L8 correct band order 2')
+
+////////////////////
+///////TASK/////////
+////////////////////
+
+/*
+Using what you have learnt above (and copy/pasting/modifying code if needed) try to visualise
+an image from a different dataset.
+Tips:
+- use the search bar to find a dataset you are interested in. If you don't know the names of 
+  datasets you can also type keywords (e.g. "fire", "vegetation" etc.)
+- to find out what band names you need either print an image object to the console, or if you need
+  more information to work out what they are, look at the dataset information available from the 
+  search bar
+- If your image appears on the map entirely black/entirely white you need to alter the min and max
+  options when using Map.addLayer
+*/
+
+/////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////
+/*
+STEP 2 - FILTERING - GETTING THE DATA THAT YOU ACTUALLY WANT
+Comment out all the code
+*/
