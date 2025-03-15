@@ -1,0 +1,204 @@
+//////////////////////////////////////////////////////////////////////
+///////////////Getting Started with Google Earth Engine///////////////
+/////////Tutorial 4 - Intro to mapping functions and reducers/////////
+////////////(C) James M. Lea, University of Liverpool, 2025///////////
+////////////////////Email: j.lea@liverpool.ac.uk//////////////////////
+//////////////////////////////////////////////////////////////////////
+
+/*
+This tutorial covers an introduction to mapping functions (i.e. how to apply the same
+operation to all images/features held within an image or feature collection), and reducers
+that can collapse the results of an entire collection into a summary statistic (e.g.
+mean, min, max, standard deviation etc). We will also cover thresholding, masking out
+data that we don't want and how to retain useful metadata information in the collections
+that you work with.
+
+In a simple way, mapping functions can be thought of as the GEE equivalent of a 'for loop',
+however to take advantage of GEE's parallel processing power, each iteration is calculated
+simultaneously in cloud. As a result, this approach is *not* suitable for iterative calculations
+(i.e. where you need the result from a previous iteration to calculate the next result).
+
+The end result of this tutorial will be the creation of a water/tidal/land mask for 
+NW England using NDWI
+
+By the end of this tutorial you should know how to write mapping functions, apply the 
+same calculation to every image/feature in a collection, and how to get a summary result
+at the end.
+
+**USEFUL TIPS FOR WORKING WITH THIS SCRIPT**
+So you can work this tutorial step by step some code is commented
+out (green text) by starting each line with "//", while some instruction text is bracketed by "/*" 
+or "//////".
+It is possible to toggle commented/uncommented code by using a keyboard shortcut
+Ctrl + /
+
+Try to avoid deleting or uncommenting the instruction text as it will mess up
+the script!
+*/
+
+//////////////////////////////////
+///////TUTORIAL BEGINS HERE///////
+//////////////////////////////////
+
+////(4a) Get an image collection to work with. Here we look for cloud free imagery in NW England
+//////// for 2013-2024. To increase the number of images, I have also combined this
+//////// with data from Landsat 9 using the .merge(collection2) function.
+var imColl=ee.ImageCollection("LANDSAT/LC08/C02/T1_L2")
+                        .filterBounds(geometry)
+                        .filterDate('2013-01-01','2025-01-01')
+                        .filter(ee.Filter.lt('CLOUD_COVER',10))
+                        .select(['SR_B4','SR_B3','SR_B2','SR_B5'])
+          .merge(ee.ImageCollection("LANDSAT/LC09/C02/T1_L2")
+                        .filterBounds(geometry)
+                        .filterDate('2013-01-01','2025-01-01')
+                        .filter(ee.Filter.lt('CLOUD_COVER',10))
+                        .select(['SR_B4','SR_B3','SR_B2','SR_B5']))
+print('(4a) Image collection before any processing',ee.ImageCollection(imColl))
+
+////(4b) Writing mapping functions
+//////// As we have our image collection of NW England defined above we can create our mapping
+//////// function to calculate the normalised difference water index (NDWI) for every image in 
+//////// the collection using .map(function). Note that here we are passing a custom written 
+//////// function to .map() where each image in the collection is referred to using the variable
+//////// that we have called 'im'. At the end of the function, the result that we want out comes
+//////// after the 'return' statement.
+///NOTE: In mapping functions you cannot ask GEE to print any statements to the console. If you
+//////// want to debug a function, it is often useful to get an example image you want to work
+//////// with and make sure whatever you want to do to the image works before you try and run it
+//////// over an entire collection.
+
+var imCollMapped=ee.ImageCollection(imColl)
+                .map(function(im){  //each image will have the variable name 'im' within the function
+                  var ndwi=ee.Image(im).normalizedDifference(['SR_B3','SR_B5']) //ndwi calc
+                                .rename('ndwi') //rename the result band name as ndwi
+                  //Return result:
+                  return ee.Image(ndwi)
+                })
+print('(4b) Result of first mapping function attempt',ee.ImageCollection(imCollMapped))
+
+////(4c) If you look at the results of (4b) in the console, you will see we now have a new collection
+//////// of NDWI images, though all the useful identifying metadata has been lost. This can be avoided 
+//////// if we replace L64 with:
+//////// return ee.Image(im).addBands([ee.Image(ndwi)])
+//////// This will retain all of the bands and metadata from the original input image, and the NDWI result.
+//////// However, to keep your code running fast you may want to dump all the superfluous data and only
+//////// keep the NDWI result. If this is the case, then we need to reappend the metadata that may prove
+//////// useful down the line by copying it from the input image:
+var imCollMapped1=ee.ImageCollection(imColl)
+                .map(function(im){  //each image will have the variable name 'im' within the function
+                  var ndvi=ee.Image(im).normalizedDifference(['SR_B3','SR_B5']) //ndwi calc
+                                .rename('ndwi') //rename the result band name as ndwi
+                  //Return result:
+                  return ee.Image(ndvi)
+                            .copyProperties(im) //copies (nearly) all metadata from original image
+                            .set('system:time_start',ee.Image(im).get('system:time_start')) //copies UNIX timestamp
+                            .set('system:id',ee.Image(im).get('system:id')) //copies original image ID
+                })
+
+print('(4c) Result of mapping function with metadata',ee.ImageCollection(imCollMapped1))
+
+////(4d) If you compare the results of (4b) and (4c) in the console, you will see that (4c) has all the
+//////// metadata from the original imagery, image ID information, and UNIX timestamp that allows for
+//////// subsequent temporal filtering (see Tutorial 2). At this point, we can have a first attempt at
+//////// creating an image that shows the mean NDWI across every image. This is done using a reducer function
+//////// [syntax: .reduce(reducer)]. There are multiple different types of reducer (see Docs for more info)
+//////// but for calculating the mean in the example, the reducer will be ee.Reducer.mean() and it will
+//////// return an ee.Image() object where the suffix '_mean' has been added to the band name (see console
+//////// result).
+
+var meanNDWI1=ee.ImageCollection(imCollMapped1)
+                .reduce(ee.Reducer.mean())
+print('(4d) Mean NDWI result',ee.Image(meanNDWI1))
+//////// Uncomment the line below to visualise the result in the map. For this GEE has calculated the NDWI
+//////// of 44 full satellite images and then taken the mean of them in just a few seconds!
+// Map.addLayer(ee.Image(meanNDWI1),{min:-0.5,max:0.5,palette:['blue','white','green']},'(4d) Mean NDWI - first attempt')
+
+////(4e) Thresholding
+//////// Sometimes it is also useful to know where in images exceed a certain value and return a binary map
+//////// of where the value is higher (=1) or lower (=0). This can either be incorporated into the previous
+//////// mapping function or we can create a new one like below where we use the .gt(value) logical function
+//////// to create a binary map:
+var mappedThreshold=ee.ImageCollection(imCollMapped1)
+                      .map(function(im){
+                        return ee.Image(im).select('ndwi').gt(0)
+                                  .copyProperties(im)
+                                  .set('system:time_start',ee.Image(im).get('system:time_start')) //copies UNIX timestamp
+                                  .set('system:id',ee.Image(im).get('system:id')) //copies original image ID
+                })
+//////// We can then visualise the total number of times areas of the image have NDWI values are >0 from
+//////// the imagery that is available to us by using the ee.Reducer.sum() function.
+var totalGtThresh=ee.ImageCollection(mappedThreshold)
+                  .reduce(ee.Reducer.sum())
+                  .rename('sumGtThresh')
+//////// Uncomment the line below to visualise this on the map
+// Map.addLayer(totalGtThresh,{min:0,max:15,palette:['black','green','white']},'(4e) number times NDWI >0.2')
+
+//////// However, because the area spans multiple Landsat tiles, some areas have more images than others. To
+//////// get around this, we need to find out how many times each area has been observed. We therefore
+//////// need to modify the mapping function to return an extra result showing where any data are observed
+//////// which will allow us to work out a percentage
+var mappedThresholdPC=ee.ImageCollection(imCollMapped1)
+                      .map(function(im){
+                        var areaObserved=ee.Image(im).select('ndwi').gt(-999) //get binary image showing where data exist
+                                            .rename('observed')
+                        return ee.Image(im).select('ndwi').gt(0).rename('ndwiGtThresh')
+                                  .addBands([ee.Image(areaObserved)]) //add areaObserved to output
+                                  .copyProperties(im)
+                                  .set('system:time_start',ee.Image(im).get('system:time_start')) //copies UNIX timestamp
+                                  .set('system:id',ee.Image(im).get('system:id')) //copies original image ID
+                })
+//////// We can now work out a percentage for how many observations have areas where NDWI >0.2
+var totalObservations=ee.ImageCollection(mappedThresholdPC).select('observed')
+                        .reduce(ee.Reducer.sum()) //total observations
+var obsGtThresh=ee.ImageCollection(mappedThresholdPC).select('ndwiGtThresh')
+                        .reduce(ee.Reducer.sum()) //total observations
+var ndwiPcGtThresh=ee.Image(obsGtThresh).divide(totalObservations).multiply(100)
+//////// Uncomment line below to show result
+// Map.addLayer(ee.Image(ndwiPcGtThresh),{min:0,max:100,palette:['white','brown','lightgreen','green']},'(4ei) % NDWI >0.2')
+
+////(4f) Now we have an image showing how often an area is observed as water, we can start to do some
+//////// simple classification of surfaces into classes of land/water/tidal using logical operators. You
+//////// can play around with the thresholds to see how it affects the results
+var landThreshold=10  // areas observed as water <10% of the time are classified as land
+var waterThreshold=90 // areas observed as water <90% of the time are classified as water
+var land=ee.Image(ndwiPcGtThresh).lt(landThreshold)  //creates binary mask of land=1, not land=0
+var water=ee.Image(ndwiPcGtThresh).gt(waterThreshold) //creates binary mask of water=1, not water=0
+var tidal=ee.Image(ndwiPcGtThresh).lte(waterThreshold)
+            .and(ee.Image(ndwiPcGtThresh).gte(landThreshold)) //creates binary mask of tidal areas=1 and not tidal=0
+            
+//////// To create a classified image, we can now blend these images together, with classification values
+//////// of land=1, tidal=2, sea=3. Because the land/water/tidal masks are binary images (i.e. 1's and 0's)
+//////// to get the water and tidal masks to the correct classification value we need to multiply them
+//////// by the number that we want them to be in the image. Also as the .blend() function overlays the
+//////// results of one image on top of the other we need to get rid of the 0 values from each image. This
+//////// can be done using the .selfMask() function that removes all values in an image that equal 0.
+//////// Another way of doing this would be to use the .updateMask(mask) function [for example the land
+//////// example below would be written as ee.Image(land).updateMask(land.eq(0))]
+var classifiedImage=ee.Image(land).selfMask()
+                    .blend(ee.Image(tidal).multiply(2).selfMask())
+                    .blend(ee.Image(water).multiply(3).selfMask())
+                    .rename('classifiedImage')
+//////// Uncomment the line below to see the result in the map
+// Map.addLayer(ee.Image(classifiedImage),{min:1,max:3,palette:['green','brown','blue']},'(4f) Classified image)
+
+
+////////////////////
+///////TASK/////////
+////////////////////
+
+/*
+Using what you have learnt above (and copy/pasting/modifying code if needed) filter Sentinel-2
+data for imagery collected between 2018 and the end of 2024 for your own area of interest, and 
+create a mapping function that calculates the NDVI of each image. From the resulting collection 
+create maps showing: the median of the results in the image collection; and the standard deviation 
+of the results in the image collection. Finally, from the NDVI image collection you have created,
+use filtering to find and visualise the first image in the collection that occurs after 1st June 2022
+Tips:
+- open up a new code editor window to avoid any of the code in this tutorial iterfering with yours
+- use the search bar at the top of the page to find out information about the Sentinel-2 image
+  collections, band information, and image metadata names
+- look up on the internet which bands are needed for the NDVI calculation
+- use the code examples above to help guide you in what to write for your mapping function
+- if needed, refamiliarise yourself with image visualisation and filtering steps that were covered
+  in Tutorials 1 and 2.
+*/
